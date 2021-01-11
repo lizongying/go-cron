@@ -16,16 +16,17 @@ import (
 )
 
 type Task struct {
+	Cmd     *Cmd
 	EntryID cron.EntryID
-	Pid     int
 	Md5     string
+	Pid     int
 }
 type Cmd struct {
 	Id     int
 	Script string
 	Dir    string
 	Spec   string
-	Server string
+	Group  string
 	Enable bool
 }
 
@@ -38,6 +39,7 @@ var (
 )
 
 var Interval = time.Minute
+var Group = "example"
 
 func init() {
 	logFile, err := os.OpenFile("cron.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
@@ -68,7 +70,7 @@ func run() {
 			Script string `json:"script"`
 			Dir    string `json:"dir"`
 			Spec   string `json:"spec"`
-			Server string `json:"server"`
+			Group  string `json:"group"`
 			Enable bool   `json:"enable"`
 		}
 		if err := json.Unmarshal(conf, &confList); err != nil {
@@ -76,30 +78,33 @@ func run() {
 			time.Sleep(Interval)
 			continue
 		}
-		var cmdList []Cmd
+		var cmdList []*Cmd
 		for _, cmd := range confList {
-			cmdList = append(cmdList, Cmd{
+			cmdList = append(cmdList, &Cmd{
 				Id:     cmd.Id,
 				Script: cmd.Script,
 				Dir:    cmd.Dir,
 				Spec:   cmd.Spec,
-				Server: cmd.Server,
+				Group:  cmd.Group,
 				Enable: cmd.Enable,
 			})
 		}
 		for _, cmd := range cmdList {
-			go func(cmd Cmd) {
+			go func(cmd *Cmd) {
 				taskId := cmd.Id
 				script := cmd.Script
 				dir := cmd.Dir
 				spec := cmd.Spec
-				server := cmd.Server
+				group := cmd.Group
 				enable := cmd.Enable
+				if group != Group {
+					return
+				}
 				if enable {
 					if TaskMap[taskId] == nil {
 						TaskMap[taskId] = &Task{}
 					}
-					taskMd5 := fmt.Sprintf("%x", md5.Sum([]byte(script+dir+spec+server)))
+					taskMd5 := fmt.Sprintf("%x", md5.Sum([]byte(script+dir+spec)))
 					entryID := TaskMap[taskId].EntryID
 					if entryID > 0 {
 						//Info.Println("cmd is in cron:", cmd)
@@ -108,7 +113,7 @@ func run() {
 							entryIDOld := entryID
 							cmdOld := cmd
 							entryID, _ = c.AddFunc(spec, func() {
-								execScript(cmd)
+								execScript(*cmd)
 							})
 							if entryID == 0 {
 								Info.Println("add cmd failed:", cmd)
@@ -116,6 +121,7 @@ func run() {
 							}
 							TaskMap[taskId].Md5 = taskMd5
 							TaskMap[taskId].EntryID = entryID
+							TaskMap[taskId].Cmd = cmd
 							Info.Println("add cmd from cron:", cmd)
 							c.Remove(entryIDOld)
 							Info.Println("remove cmd from cron:", cmdOld)
@@ -124,7 +130,7 @@ func run() {
 					}
 					//增加任务
 					entryID, _ = c.AddFunc(spec, func() {
-						execScript(cmd)
+						execScript(*cmd)
 					})
 					if entryID == 0 {
 						delete(TaskMap, taskId)
@@ -133,6 +139,7 @@ func run() {
 					}
 					TaskMap[taskId].Md5 = taskMd5
 					TaskMap[taskId].EntryID = entryID
+					TaskMap[taskId].Cmd = cmd
 					Info.Println("add cmd to cron:", cmd)
 				} else {
 					//删除任务
@@ -159,10 +166,6 @@ func execScript(cmd Cmd) {
 	taskId := cmd.Id
 	script := cmd.Script
 	dir := cmd.Dir
-	server := cmd.Server
-	if server != "" {
-		script = fmt.Sprintf("ssh %s %s", server, script)
-	}
 	pid := TaskMap[taskId].Pid
 	if pid > 0 {
 		s, err := infoScript(pid)

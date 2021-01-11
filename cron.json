@@ -1,10 +1,10 @@
 [
   {
     "id": 1,
+    "enable": true,
+    "group": "",
     "script": "sleep 100",
     "dir": "",
-    "spec": "* * * * *",
-    "server": "",
-    "enable": true
+    "spec": "* * * * *"
   }
 ]
