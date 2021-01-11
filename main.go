@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/robfig/cron/v3"
+	"go-cron/app"
+	"go.mongodb.org/mongo-driver/bson"
 	"io"
 	"io/ioutil"
 	"log"
@@ -39,10 +41,17 @@ var (
 )
 
 var Interval = time.Minute
-var Group = "example"
+var Group = ""
+var CronFile = ""
 
 func init() {
-	logFile, err := os.OpenFile("cron.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	app.InitConfig()
+	mongo := app.Conf.Mongo
+	app.InitMongo(mongo)
+	CronFile = app.Conf.CronFile
+	Group = app.Conf.Group
+	Interval = time.Duration(app.Conf.Interval) * time.Minute
+	logFile, err := os.OpenFile(app.Conf.Log.Filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalln("open log file failed")
 	}
@@ -59,12 +68,6 @@ func run() {
 	c := cron.New()
 	c.Start()
 	for {
-		conf, err := ioutil.ReadFile("cron.json")
-		if err != nil {
-			Error.Println("read config file failed")
-			time.Sleep(Interval)
-			continue
-		}
 		var confList []struct {
 			Id     int    `json:"id"`
 			Script string `json:"script"`
@@ -73,22 +76,52 @@ func run() {
 			Group  string `json:"group"`
 			Enable bool   `json:"enable"`
 		}
-		if err := json.Unmarshal(conf, &confList); err != nil {
-			Error.Println("parse config file failed")
-			time.Sleep(Interval)
-			continue
-		}
 		var cmdList []*Cmd
-		for _, cmd := range confList {
-			cmdList = append(cmdList, &Cmd{
-				Id:     cmd.Id,
-				Script: cmd.Script,
-				Dir:    cmd.Dir,
-				Spec:   cmd.Spec,
-				Group:  cmd.Group,
-				Enable: cmd.Enable,
-			})
+		if CronFile != "" {
+			conf, err := ioutil.ReadFile(CronFile)
+			if err != nil {
+				Error.Println("read config file failed")
+				time.Sleep(Interval)
+				continue
+			}
+
+			if err := json.Unmarshal(conf, &confList); err != nil {
+				Error.Println("parse config file failed")
+				time.Sleep(Interval)
+				continue
+			}
+			for _, cmd := range confList {
+				cmdList = append(cmdList, &Cmd{
+					Id:     cmd.Id,
+					Script: cmd.Script,
+					Dir:    cmd.Dir,
+					Spec:   cmd.Spec,
+					Group:  cmd.Group,
+					Enable: cmd.Enable,
+				})
+			}
+		} else {
+			cur, err := app.MongoDatabase.Collection("cron").Find(app.Ctx, bson.D{{}})
+			if err != nil {
+			}
+			for cur.Next(app.Ctx) {
+				var cmd Cmd
+				err := cur.Decode(&cmd)
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+				cmdList = append(cmdList, &Cmd{
+					Id:     cmd.Id,
+					Script: cmd.Script,
+					Dir:    cmd.Dir,
+					Spec:   cmd.Spec,
+					Group:  cmd.Group,
+					Enable: cmd.Enable,
+				})
+			}
 		}
+
 		for _, cmd := range cmdList {
 			go func(cmd *Cmd) {
 				taskId := cmd.Id

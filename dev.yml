@@ -1,0 +1,8 @@
+group: local
+interval: 1
+cron_file: /Users/lizongying/IdeaProjects/go-cron/cron.json
+mongo:
+  uri: mongodb://b-mysql-core17:27017,b-mysql-core18:27017,b-mysql-core19:27017
+  database: snkrs_bot
+log:
+  filename: /Users/lizongying/Temp/log/cron.log

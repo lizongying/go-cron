@@ -1,0 +1,8 @@
+group: local
+interval: 1
+cron_file: cron.json
+mongo:
+  uri:
+  database:
+log:
+  filename: cron.log
