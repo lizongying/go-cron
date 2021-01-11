@@ -1,8 +1,9 @@
-group: local
+group:
 interval: 1
 cron_file: cron.json
 mongo:
   uri:
   database:
+  collection:
 log:
   filename: cron.log
