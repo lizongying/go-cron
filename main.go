@@ -12,7 +12,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -21,7 +20,7 @@ type Task struct {
 	Cmd     *Cmd
 	EntryID cron.EntryID
 	Md5     string
-	Pid     int
+	State   string
 }
 type Cmd struct {
 	Id     int
@@ -198,17 +197,9 @@ func execScript(cmd Cmd) {
 	taskId := cmd.Id
 	script := cmd.Script
 	dir := cmd.Dir
-	pid := TaskMap[taskId].Pid
-	if pid > 0 {
-		s, err := infoScript(pid)
-		if err == nil && len(s) > 0 {
-			switch s[0:1] {
-			case "R",
-				"S":
-				//Info.Println("cmd is in process:", cmd)
-				return
-			}
-		}
+	if TaskMap[taskId].State == "RUN" {
+		Info.Println("cmd is in process:", cmd)
+		return
 	}
 	s := strings.Split(script, " ")
 	shell := exec.Command(s[0], s[1:]...)
@@ -220,20 +211,15 @@ func execScript(cmd Cmd) {
 		Error.Println("cmd run failed:", cmd)
 		return
 	}
-	pid = shell.Process.Pid
-	TaskMap[taskId].Pid = pid
-	Info.Println(pid, shell)
-}
-
-func infoScript(pid int) (string, error) {
-	shell := exec.Command("ps", "h", "-o", "stat", "-p", strconv.Itoa(pid))
-	out, err := shell.Output()
-	if err != nil {
-		return "", err
-	}
-	s := string(out)
-	s = strings.Replace(s, "STAT", "", -1)
-	s = strings.Replace(s, "\n", "", -1)
-	s = strings.Replace(s, " ", "", -1)
-	return s, err
+	go func() {
+		if err := shell.Wait(); err != nil {
+			Info.Println("cmd is killed:", cmd)
+			TaskMap[taskId].State = "DIE"
+			return
+		}
+		Info.Println("cmd is finished:", cmd)
+		TaskMap[taskId].State = "FIN"
+	}()
+	TaskMap[taskId].State = "RUN"
+	Info.Println(shell.Process.Pid, shell)
 }
